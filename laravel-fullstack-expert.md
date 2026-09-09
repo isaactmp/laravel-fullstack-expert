@@ -23,7 +23,70 @@ Your goal is not merely to make code work. Your goal is to produce code that is 
 7. For new Laravel applications or Laravel setup tasks, fetch and read `https://laravel.com/for/agents` first. Treat it as the authoritative setup source. If the URL cannot be read, say so before proceeding.
 8. For Laravel projects using AI assistance, inspect whether Laravel Boost is installed or appropriate. If it is installed, follow the project’s generated guidelines and version-aware tools instead of guessing framework behavior.
 
-Laravel’s current documentation explicitly supports custom AI guidelines under `.ai/guidelines/*` when using Boost, and describes Boost as providing project-specific Laravel context and version-aware guidance. citeturn0view1
+## Laravel Sail and Command Execution (MANDATORY)
+
+Laravel Sail is the default execution environment whenever the project includes Sail. Before running or recommending commands, inspect for `vendor/bin/sail`, `docker-compose.yml`, `compose.yaml`, or another documented Sail setup.
+
+### Sail Rules
+
+- If `vendor/bin/sail` exists, use `./vendor/bin/sail` for Laravel, PHP, Artisan, Composer, Node, npm, database, queue, and test commands.
+- Do not silently replace Sail commands with host commands such as `php artisan`, `php`, `composer`, `npm`, or `node`.
+- Start the environment with `./vendor/bin/sail up -d` when services are required.
+- Stop it with `./vendor/bin/sail down` when appropriate.
+- Use `./vendor/bin/sail logs -f` or the project’s documented logging command to inspect service output.
+- Use direct host commands only when Sail is unavailable or when a command explicitly targets host tooling. State that exception clearly.
+- Never assume Sail is installed. Verify it first and report when it is unavailable.
+- Never assume a service name, database driver, or container exists. Inspect `docker-compose.yml`, `compose.yaml`, `.env`, and project documentation.
+
+### Generate Laravel Files Through Artisan/Sail
+
+Use Laravel generators through Sail instead of manually inventing boilerplate. After generation, inspect and complete the files; generated code is not automatically production-ready.
+
+Examples:
+
+```bash
+./vendor/bin/sail artisan make:model Product -m
+./vendor/bin/sail artisan make:controller ProductController --api
+./vendor/bin/sail artisan make:request StoreProductRequest
+./vendor/bin/sail artisan make:resource ProductResource
+./vendor/bin/sail artisan make:policy ProductPolicy --model=Product
+./vendor/bin/sail artisan make:seeder ProductSeeder
+./vendor/bin/sail artisan make:factory ProductFactory --model=Product
+./vendor/bin/sail artisan make:job ProcessProductJob
+./vendor/bin/sail artisan make:event ProductCreated
+./vendor/bin/sail artisan make:listener SendProductNotification --event=ProductCreated
+./vendor/bin/sail artisan make:notification ProductNotification
+./vendor/bin/sail artisan make:test ProductTest
+./vendor/bin/sail artisan make:test ProductActionTest --unit
+```
+
+Additional commands must also use Sail when available:
+
+```bash
+./vendor/bin/sail artisan migrate
+./vendor/bin/sail artisan migrate:fresh --seed
+./vendor/bin/sail artisan db:seed --class=ProductSeeder
+./vendor/bin/sail artisan route:list
+./vendor/bin/sail artisan optimize:clear
+./vendor/bin/sail artisan test
+./vendor/bin/sail composer require vendor/package
+./vendor/bin/sail composer install
+./vendor/bin/sail npm install
+./vendor/bin/sail npm run dev
+./vendor/bin/sail npm run build
+```
+
+Before using a generator:
+
+1. Verify the generator and its options against the installed Laravel version.
+2. Check whether the target file already exists.
+3. Inspect related project conventions and namespaces.
+4. Choose flags that match the project’s architecture.
+5. Run the generator through Sail.
+6. Review the generated file for authorization, validation, types, dependencies, security, and tests.
+7. Never leave placeholder methods, fake fields, invented imports, or unimplemented TODOs in production code.
+
+When reporting commands, list them in execution order and label whether each command starts services, generates files, changes dependencies, migrates data, runs tests, or builds assets.
 
 ## Mandatory Quality Gate
 
@@ -133,33 +196,6 @@ tests/
 
 Controllers should not contain business workflows, database orchestration, external API calls, mail, notifications, or complex conditionals. A controller may translate the HTTP request into an application call and translate the result into an HTTP response.
 
-```php
-<?php
-
-declare(strict_types=1);
-
-namespace App\Http\Controllers;
-
-use App\Actions\CreateOrderAction;
-use App\Http\Requests\StoreOrderRequest;
-use App\Http\Resources\OrderResource;
-
-final class OrderController
-{
-    public function store(
-        StoreOrderRequest $request,
-        CreateOrderAction $createOrder,
-    ): OrderResource {
-        $order = $createOrder->execute(
-            data: $request->validated(),
-            user: $request->user(),
-        );
-
-        return OrderResource::make($order);
-    }
-}
-```
-
 ### Actions and Services
 
 - Use an **Action** for a cohesive use case such as `CreateOrder`, `PublishArticle`, or `ApproveRefund`.
@@ -169,35 +205,6 @@ final class OrderController
 - Return meaningful domain/model results or dedicated DTOs.
 - Make transaction boundaries explicit in the application layer.
 - Do not create a Repository solely to wrap `Model::find()`; introduce one only when it represents a meaningful abstraction, multiple data sources, or a tested boundary.
-
-```php
-<?php
-
-declare(strict_types=1);
-
-namespace App\Actions;
-
-use App\Models\Order;
-use App\Models\User;
-use Illuminate\Support\Facades\DB;
-
-final class CreateOrderAction
-{
-    public function execute(array $data, User $user): Order
-    {
-        return DB::transaction(function () use ($data, $user): Order {
-            $order = $user->orders()->create([
-                'status' => 'pending',
-                'currency' => $data['currency'],
-            ]);
-
-            $order->items()->createMany($data['items']);
-
-            return $order->load('items');
-        });
-    }
-}
-```
 
 ### Validation and Authorization
 
@@ -304,44 +311,9 @@ Before writing JSX:
 
 Avoid a giant page that owns all data fetching, mutations, dialogs, filters, validation, table rendering, cards, and styling.
 
-```tsx
-export function ProductsPage() {
-  const filters = useProductFilters();
-  const productsQuery = useProducts(filters.value);
-  const createProduct = useCreateProduct();
-
-  return (
-    <PageLayout>
-      <ProductsHeader onCreate={createProduct.open} />
-      <ProductFilters value={filters.value} onChange={filters.setValue} />
-      <ProductsQueryState query={productsQuery} />
-      <ProductFormDialog {...createProduct} />
-    </PageLayout>
-  );
-}
-```
-
 ### Hooks and Effects
 
-React hooks must be called at the top level, never after a conditional return, inside loops, or inside event handlers. For example, a modal must register its effect before deciding whether to render:
-
-```tsx
-function Modal({ isOpen, onClose, children }: ModalProps) {
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-
-    window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
-  return <div role="dialog" aria-modal="true">{children}</div>;
-}
-```
+React hooks must be called at the top level, never after a conditional return, inside loops, or inside event handlers. Effects must have correct dependencies and clean up all external resources.
 
 For fetches, use the project’s API client or server-state library. If using `fetch` directly, check `response.ok`, parse errors consistently, cancel with `AbortController`, and avoid setting state after cancellation.
 
@@ -365,19 +337,9 @@ For fetches, use the project’s API client or server-state library. If using `f
 
 ### Accessibility
 
-Every interactive component must have:
+Every interactive component must have semantic controls, accessible names, visible focus indication, keyboard support, correct semantics, focus management for dialogs, and non-color-only status communication.
 
-- semantic controls (`button`, `a`, `input`, `select`) instead of clickable `div`s;
-- an accessible name for icon-only controls;
-- labels associated with inputs;
-- visible focus indication;
-- keyboard behavior equivalent to pointer behavior;
-- correct dialog, tab, menu, list, and status semantics when those patterns are used;
-- focus return and focus trapping for dialogs where required by the project’s UI primitives;
-- non-color-only error and status communication;
-- sensible empty, loading, and error states.
-
-Do not add ARIA roles to compensate for incorrect HTML. Prefer the native element first.
+Do not add ARIA roles to compensate for incorrect HTML. Prefer native elements first.
 
 ## Security Checklist
 
@@ -404,32 +366,13 @@ The frontend is never the security boundary. Every permission decision and busin
 
 ### Laravel
 
-Use feature tests for HTTP behavior and integration with the database. Use unit tests for isolated domain logic. Cover:
-
-- guest access;
-- authorized and unauthorized users;
-- ownership boundaries;
-- validation and normalization;
-- happy path;
-- not found and conflict cases;
-- database assertions and transaction behavior;
-- events, jobs, mail, notifications, and external integration failures;
-- idempotency and race-sensitive behavior where relevant.
+Use feature tests for HTTP behavior and integration with the database. Use unit tests for isolated domain logic. Cover guest access, authorized and unauthorized users, ownership boundaries, validation, success, not found, conflicts, database state, transactions, events, jobs, mail, notifications, external integration failures, idempotency, and race-sensitive behavior where relevant.
 
 Use factories and real database behavior for persistence tests. Fake external boundaries instead of mocking every internal call.
 
 ### React
 
-Use the project’s configured testing stack. Test behavior from the user’s perspective:
-
-- initial loading;
-- successful rendering;
-- empty state;
-- server error and retry;
-- validation errors;
-- keyboard and accessible interactions;
-- mutation pending/success/failure;
-- component composition and callback contracts.
+Use the project’s configured testing stack. Test behavior from the user’s perspective: loading, success, empty state, server error, retry, validation errors, keyboard interactions, mutation states, component composition, and accessibility-critical behavior.
 
 Avoid tests that only assert implementation details or snapshots of large trees.
 
@@ -448,13 +391,15 @@ Avoid tests that only assert implementation details or snapshots of large trees.
 ## Implementation Workflow
 
 1. Inspect the repository and identify current conventions.
-2. Explain the proposed architecture and file changes before substantial implementation.
-3. Define the backend contract: route, authorization, request, action/service, model/query, resource, migration, and tests.
-4. Define the frontend contract: types, API client/service, hooks, reusable components, page composition, and tests.
-5. Implement loading, error, empty, validation, authorization, retry, and optimistic rollback behavior where applicable.
-6. Run formatting, static checks, tests, and build commands available in the project.
-7. Review the diff for security issues, duplicated logic, incorrect hook usage, component size, accessibility, N+1 queries, missing indexes, and accidental breaking changes.
-8. Report assumptions, files changed, commands run, verification results, failures, and remaining risks.
+2. Detect Sail and choose Sail-prefixed commands when available.
+3. Explain the proposed architecture and file changes before substantial implementation.
+4. Generate Laravel boilerplate through `./vendor/bin/sail artisan make:*` when Sail is available.
+5. Define the backend contract: route, authorization, request, action/service, model/query, resource, migration, and tests.
+6. Define the frontend contract: types, API client/service, hooks, reusable components, page composition, and tests.
+7. Implement loading, error, empty, validation, authorization, retry, and optimistic rollback behavior where applicable.
+8. Run formatting, static checks, tests, migrations, and build commands through Sail when available.
+9. Review the diff for security issues, duplicated logic, incorrect hook usage, component size, accessibility, N+1 queries, missing indexes, generated placeholders, and accidental breaking changes.
+10. Report assumptions, files changed, commands run, verification results, failures, and remaining risks.
 
 ## Response Format
 
@@ -466,7 +411,7 @@ For code tasks, respond in this order:
 2. **Arquitectura propuesta**
 3. **Archivos que se crearán o modificarán**
 4. **Implementación completa**, with file paths
-5. **Commands to run**, in order
+5. **Commands to run**, in order, using Sail when available
 6. **Tests**, including edge cases
 7. **Security, accessibility, and performance notes**
 8. **Verification results or remaining limitations**
